@@ -1,0 +1,617 @@
+---
+title: "ADA Final Project"
+author: "Keilya Kasprzyk, Lucy Ingaiza, Trisha Grewal"
+date: "4/29/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, results = 'hide', warning = FALSE, message = FALSE)
+```
+
+
+```{r}
+#install packages if needed
+
+#install.packages("pacman")
+#install.packages("nhanesA")
+#install.packages("tidyverse")
+#install.packages("car")
+#install.packages("table1")
+#install.packages("ggpubr")
+#install.packages("gmodels")
+#install.packages("nnet")
+#install.packages("MASS")
+#install.packages("lmtest")
+#install.packages("sjPlot")
+#install.packages("sjmisc")
+#install.packages("sjlabelled")
+
+#Load libraries
+pacman::p_load(nhanesA, tidyverse, car, table1, ggpubr, gmodels, nnet, MASS, lmtest, sjPlot, sjmisc, sjlabelled)
+```
+
+```{r}
+#Load the data and create dataset
+
+#get questionnaire data from 2017 NHANES
+nhanes2017  <- nhanesTables('Q', 2017, namesonly=TRUE)
+nhanes2017tables <- lapply(nhanes2017, nhanes)
+names(nhanes2017tables) <- nhanes2017
+
+#get demographic data from 2017 NHANES
+nhanesdemo2017  <- nhanesTables('DEMO', 2017, namesonly=TRUE)
+nhanesdemo2017tables <- lapply(nhanesdemo2017, nhanes)
+names(nhanesdemo2017tables) <- nhanesdemo2017
+
+#get examination data from 2017 NHANES
+nhanesoral2017  <- nhanesTables('EXAM', 2017, namesonly=TRUE)
+nhanesoral2017tables <- lapply(nhanesoral2017, nhanes)
+names(nhanesoral2017tables) <- nhanesoral2017
+
+#extract questionnaire about work
+work <- nhanes2017tables$OCQ_J
+
+#extract questionnaire about insurance
+insurance <- nhanes2017tables$HIQ_J
+
+#extract demographics data
+demographics <- nhanesdemo2017tables$DEMO_J
+
+#extract oral examination data
+oral <- nhanesoral2017tables$OHXREF_J
+
+#merge data
+merge1 <- merge(work, insurance, by="SEQN")
+
+merge2 <- merge(demographics, oral, by="SEQN")
+
+merged.NHANES <- merge(merge1, merge2, by="SEQN")
+
+#subset only desired variables
+NHANES.small = subset(merged.NHANES, select = c(SEQN, RIDAGEYR, RIDRETH1, DMDCITZN, RIAGENDR, OHAREC, HIQ011, OCQ670, OCQ260, OCD270))
+summary (object=NHANES.small)
+```
+
+```{r}
+#Check variables and their types
+sapply(NHANES.small,class)
+```
+
+```{r}
+#Recode to categorical or continous 
+NHANES.small.clean<-NHANES.small %>% 
+  mutate(SEQN= as.numeric(SEQN)) %>% 
+  mutate(RIDAGEYR= as.numeric(RIDAGEYR)) %>% 
+  mutate(RIDRETH1= as.factor(RIDRETH1)) %>% 
+  mutate(DMDCITZN= as.factor(DMDCITZN)) %>% 
+  mutate(RIAGENDR= as.factor(RIAGENDR)) %>% 
+  mutate(OHAREC=as.factor(OHAREC)) %>% 
+  mutate(HIQ011= as.factor(HIQ011)) %>% 
+  mutate(OCQ670= as.factor(OCQ670)) %>% 
+  mutate(OCQ260=as.factor(OCQ260)) %>% 
+  mutate(OCD270= as.numeric(OCD270))
+
+```
+
+```{r}
+ #Check data types 
+sapply(NHANES.small.clean,class)
+
+```
+
+```{r}
+# Rename variables  
+colnames(NHANES.small.clean)= c("Respondent id","Age","Race","Citizenship",
+                                "Sex","Oral.health.status","Insurance","Schedule",
+                                "Job.type","Months.working")
+summary(NHANES.small.clean)
+```
+ 
+
+```{r}
+#Recode variables
+#Assign NA to don't know and refused responses
+NHANES.small.clean$Citizenship<- car::recode(NHANES.small.clean$Citizenship,
+                              "1 = 'US Citizen';
+                               2 = 'Not a US citizen';
+                               7 = NA;
+                               9 = NA")
+NHANES.small.clean$Insurance <- car::recode(NHANES.small.clean$Insurance,
+                              "1 = 'Yes';
+                               2 = 'No';
+                               7 = NA;
+                               9 = NA")
+NHANES.small.clean$Schedule <- car::recode(NHANES.small.clean$Schedule,
+                              "1 = '9am-5pm';
+                               2 = 'Evenings';
+                               3 = 'Early mornings';
+                               5 = 'Variable';
+                               7 = NA;
+                               9 = NA")
+NHANES.small.clean$Months.working <- car::recode(NHANES.small.clean$Months.working,
+                              "77777 = NA;
+                               99999 = NA")
+NHANES.small.clean$Race <- car::recode(NHANES.small.clean$Race,
+                              "1 = 'Mexican American';
+                               2 = 'Other Hispanic';
+                               3 = 'Non-Hispanic White';
+                               4 = 'Non-Hispanic Black';
+                               5 = 'Other Race'")
+NHANES.small.clean$Oral.health.status <- car::recode(NHANES.small.clean$Oral.health.status,
+                              "1 = 'Poor';
+                               2 = 'Poor';
+                               3 = 'Moderate';
+                               4 = 'Good'")
+NHANES.small.clean$Job.type <- car::recode(NHANES.small.clean$Job.type,
+                              "1 = 'Private';
+                               2 = 'Federal';
+                               3 = 'State';
+                               4 = 'Local';
+                               5 = 'Self-employed';
+                               6 = 'Family work';
+                               77 = NA;
+                               99 = NA")
+NHANES.small.clean$Sex <- car::recode(NHANES.small.clean$Sex,
+                              "1 = 'Male';
+                               2 = 'Female'")
+
+summary(NHANES.small.clean)
+
+```
+
+```{r}
+# drop NAs
+NHANES.complete <- NHANES.small.clean %>% 
+  drop_na()
+
+summary(NHANES.complete)
+```
+### Examine demographic distributions
+
+```{r}
+#Age
+ggplot(data = NHANES.complete, aes(x = Age)) + 
+  geom_histogram(binwidth = 5, color = "black", fill= "#8856a7") +
+  xlab("Age") +
+  ylab("Frequency") +
+  ggtitle("Distribution of age across oral health status")
+
+#Age boxplot
+ggplot(data = NHANES.complete, aes(x = Oral.health.status, y = Age)) +
+  geom_boxplot(aes(fill = Oral.health.status), alpha = .4) +
+  labs(x = "Oral Health Status", y = "Age",
+       title = "Distribution of age across oral health status") +
+        scale_fill_discrete(name = "Oral Health Status") +
+  theme_bw()
+
+#Race
+ggplot(data = NHANES.complete, aes(x = Race)) + 
+  geom_bar(aes(fill = Race)) +
+  labs(title = "Bar graph of race across oral health status") +
+  ylab("Frequency") +
+  scale_fill_manual(values=c("#8dd3c7", "#ffffb3", "#bebada", "#fb8072", "#80b1d3"), 
+                    name = "Race") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+#Citizenship
+ggplot(data = NHANES.complete, aes(x = Citizenship)) + 
+  geom_bar(aes(fill = Citizenship)) + 
+  labs(title = "Bar graph of citizenship Status across oral health status") + 
+  ylab("Frequency") +
+  scale_fill_manual(values=c("#7570b3", "#1b9e77"), 
+                    name = "Citizenship Status") +
+  theme_bw()
+
+#Sex
+ggplot(data = NHANES.complete, aes(x = Sex)) + 
+  geom_bar(aes(fill = Sex)) + 
+  labs(title = "Bar graph of sex across oral health status") +
+  ylab("Frequency") +
+  scale_fill_manual(values=c("#a6cee3", "#1f78b4"), 
+                    name = "Sex") +
+  theme_bw()
+
+#Insurance
+ggplot(data = NHANES.complete, aes(x = Insurance)) + 
+  geom_bar(aes(fill = Insurance)) +
+  labs(title = "Bar graph of insurance coverage across oral health status") +
+  ylab("Frequency") +
+  scale_fill_manual(values=c("#af8dc3", "#7fbf7b"), 
+                    name = "Insurance Coverage") +
+  theme_bw()
+```
+
+### Examine RQ predictors vs outcome
+
+```{r}
+#look at cross tabs
+
+#work type vs oral health status
+CrossTable(NHANES.complete$Job.type, NHANES.complete$Oral.health.status)
+
+#work schedule vs oral health status
+CrossTable(NHANES.complete$Schedule, NHANES.complete$Oral.health.status)
+
+#look at distribution of years working
+ggplot(data = NHANES.complete, aes(x = Months.working)) + 
+  geom_histogram(binwidth = 10, color = "black", fill= "#a6cee3") +
+  xlab("Months working in current job") +
+  ylab("Frequency") +
+  ggtitle("Distribution of months working")
+
+#some small cells and a very skewed distribution for months working
+#will recode
+```
+
+```{r}
+#recode predictor variables
+
+#job type collapse to 3 cats
+NHANES.complete$Job.Description <- car::recode(NHANES.complete$Job.type, 
+                              "'Federal' = 'Other';
+                               'State' = 'Other';
+                               'Local' = 'Other';
+                               'Self-employed' = 'Other';
+                               'Family work' = 'Other'")
+
+#Make months working into categories for years in job
+NHANES.complete$Years.working[NHANES.complete$Months.working <= 12]<- 1 #Less than a year
+NHANES.complete$Years.working[NHANES.complete$Months.working > 12 
+                                 & NHANES.complete$Months.working <= 60]<- 2 #1-5 years
+NHANES.complete$Years.working[NHANES.complete$Months.working > 60 ]<- 3 #More than 5 years
+
+class(NHANES.complete$Years.working) #check the type of variable
+
+NHANES.complete$Years.working<-factor(NHANES.complete$Years.working,labels = c("Less than a year", "1-5 years", "More than 5 years")) #change to factor variable and label levels
+
+#Make schedule into 2 cats
+NHANES.complete$Work.Schedule <- car::recode(NHANES.complete$Schedule, 
+                              "'9am-5pm'= 'Traditional';
+                               'Evenings' = 'Nontraditional';
+                               'Early mornings' = 'Nontraditional';
+                               'Variable' = 'Nontraditional'")
+summary(NHANES.complete)
+
+```
+
+```{r}
+#check new cross tabs
+
+#work type vs oral health status
+CrossTable(NHANES.complete$Job.Description, NHANES.complete$Oral.health.status)
+
+#years working vs oral health status
+CrossTable(NHANES.complete$Years.working, NHANES.complete$Oral.health.status)
+
+#work schedule vs oral health status
+CrossTable(NHANES.complete$Work.Schedule, NHANES.complete$Oral.health.status)
+
+#Looks better
+```
+
+```{r}
+#visualizations
+
+#RQ1 work sector
+ggplot(data = NHANES.complete, aes(x = Job.Description)) + 
+  geom_bar(aes(fill = Job.Description)) +
+  labs(title = "Bar graph of work sector across oral health status") +
+  ylab("Frequency") +
+  facet_wrap(~Oral.health.status) + 
+  scale_fill_manual(values=c("#7fc97f", "#beaed4"), 
+                    name = "Work Sector") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+#RQ2 time in job distribution and boxplot
+ggplot(data = NHANES.complete, aes(x = Years.working)) + 
+  geom_bar(aes(fill = Years.working)) +
+  labs(title = "Bar graph of years working in current job across oral health status") +
+  ylab("Frequency") +
+  facet_wrap(~Oral.health.status) + 
+  scale_fill_manual(values=c("#66c2a5", "#fc8d62", "#8da0cb"), 
+                    name = "Years Working") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+#RQ3 work schedule
+ggplot(data = NHANES.complete, aes(x = Work.Schedule)) + 
+  geom_bar(aes(fill = Work.Schedule)) +
+  labs(title = "Bar graph of work schedule across oral health status") +
+  ylab("Frequency") +
+  facet_wrap(~Oral.health.status) + 
+  scale_fill_manual(values=c("#a6cee3", "#b2df8a"), 
+                    name = "Work Schedule") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+```
+
+```{r}
+#set reference groups
+
+NHANES.complete$Oral.health.status <- relevel(NHANES.complete$Oral.health.status, 
+                                            ref = "Good")
+NHANES.complete$Race <- relevel(NHANES.complete$Race, 
+                                            ref = "Non-Hispanic White")
+NHANES.complete$Sex <- relevel(NHANES.complete$Sex, 
+                                            ref = "Male")
+NHANES.complete$Citizenship <- relevel(NHANES.complete$Citizenship, 
+                                            ref = "US Citizen")
+NHANES.complete$Insurance <- relevel(NHANES.complete$Insurance, 
+                                            ref = "Yes")
+NHANES.complete$Work.Schedule <- relevel(NHANES.complete$Work.Schedule, 
+                                            ref = "Traditional")
+NHANES.complete$Job.Description <- relevel(NHANES.complete$Job.Description, 
+                                            ref = "Private")
+NHANES.complete$Years.working <- relevel(NHANES.complete$Years.working, 
+                                            ref = "Less than a year")
+```
+
+```{r}
+#Descriptive statistics 
+NHANES.complete %>% 
+  summarize(mean.age= mean(x=Age),
+            sd.age = sd(x=Age),
+            med.age=median(x=Age))
+
+```
+
+### Table 1
+
+```{r results = 'markup'}
+#table 1
+table1(~Age + Race + Citizenship + Sex + Insurance + Job.Description + Work.Schedule + Years.working|Oral.health.status , droplevels=TRUE, data=NHANES.complete)
+```
+
+
+## RQ1 Analysis
+### RQ1= Work sector related to oral health
+
+```{r}
+#Model with NO covariates
+RQ1.mod1 <- multinom(Oral.health.status ~ Job.Description, data=NHANES.complete)
+summary(RQ1.mod1)
+
+#hypothesis test
+#calculate z score
+RQ1.mod1.z <- summary(RQ1.mod1)$coefficients/summary(RQ1.mod1)$standard.errors
+# 2-tailed Z test
+RQ1.mod1.p <- (1 - pnorm(abs(RQ1.mod1.z), 0, 1))*2
+RQ1.mod1.p #give pvalues for each level
+
+# Get OR's
+round(exp(coef(RQ1.mod1)), digits = 2)
+
+# Get CI's
+round(exp(confint(RQ1.mod1, level=0.95)), digits = 2)
+```
+
+
+```{r}
+#model WITH covariates
+RQ1.mod2 <- multinom(Oral.health.status ~ Job.Description + Age + Race + Sex + Insurance + Citizenship,
+                     data=NHANES.complete)
+summary(RQ1.mod2)
+
+#hypothesis test
+#calculate z score
+RQ1.mod2.z <- summary(RQ1.mod2)$coefficients/summary(RQ1.mod2)$standard.errors
+# 2-tailed Z test
+RQ1.mod2.p <- (1 - pnorm(abs(RQ1.mod2.z), 0, 1))*2
+RQ1.mod2.p #give pvalues for each level
+
+# Get OR's
+round(exp(coef(RQ1.mod2)), digits = 2)
+
+# Get CI's
+round(exp(confint(RQ1.mod2, level=0.95)), digits = 2)
+```
+
+```{r}
+#RQ1
+#which model predicts better
+lrtest(RQ1.mod1, RQ1.mod2)
+
+#model with covariates predicts better
+#we will use model with covariates for interpretations
+```
+
+#### Results 
+
+```{r results='markup'}
+#Table with output of the model with covariates
+tab_model(RQ1.mod2, digits = 2, digits.p = 2)
+
+```
+
+## RQ2 Analysis
+### RQ2= Consistent income related to oral health
+
+```{r}
+#Model with NO covariates
+RQ2.mod1 <- multinom(Oral.health.status ~ Years.working, data=NHANES.complete)
+summary(RQ2.mod1)
+
+#hypothesis test
+#calculate z score
+RQ2.mod1.z <- summary(RQ2.mod1)$coefficients/summary(RQ2.mod1)$standard.errors
+# 2-tailed Z test
+RQ2.mod1.p <- (1 - pnorm(abs(RQ2.mod1.z), 0, 1))*2
+RQ2.mod1.p #give pvalues for each level
+
+# Get OR's
+round(exp(coef(RQ2.mod1)), digits = 2)
+
+# Get CI's
+round(exp(confint(RQ2.mod1, level=0.95)), digits = 2)
+```
+
+
+```{r}
+#model WITH covariates
+RQ2.mod2 <- multinom(Oral.health.status ~ Years.working + Age + Race + Sex + Insurance + Citizenship, data=NHANES.complete)
+summary(RQ2.mod2)
+
+#hypothesis test
+#calculate z score
+RQ2.mod2.z <- summary(RQ2.mod2)$coefficients/summary(RQ2.mod2)$standard.errors
+# 2-tailed Z test
+RQ2.mod2.p <- (1 - pnorm(abs(RQ2.mod2.z), 0, 1))*2
+RQ2.mod2.p #give pvalues for each level
+
+# Get OR's
+round(exp(coef(RQ2.mod2)), digits = 2)
+
+# Get CI's
+round(exp(confint(RQ2.mod2, level=0.95)), digits = 2)
+```
+
+```{r}
+#RQ2
+#which model predicts better
+lrtest(RQ2.mod1, RQ2.mod2)
+
+#model with covariates predicts better
+#we will use model with covariates for interpretations
+```
+
+#### Results 
+
+```{r results='markup'}
+#Table with output of the model with covariates
+tab_model(RQ2.mod2, digits = 2, digits.p = 2)
+
+```
+
+## RQ3 Analysis
+### RQ3= Work schedule related to oral health
+
+```{r}
+#Model with NO covariates
+RQ3.mod1 <- multinom(Oral.health.status ~ Work.Schedule, data=NHANES.complete)
+summary(RQ3.mod1)
+
+#hypothesis test
+#calculate z score
+RQ3.mod1.z <- summary(RQ3.mod1)$coefficients/summary(RQ3.mod1)$standard.errors
+# 2-tailed Z test
+RQ3.mod1.p <- (1 - pnorm(abs(RQ3.mod1.z), 0, 1))*2
+RQ3.mod1.p #give pvalues for each level
+
+# Get OR's
+round(exp(coef(RQ3.mod1)), digits = 2)
+
+# Get CI's
+round(exp(confint(RQ3.mod1, level=0.95)), digits = 2)
+```
+
+
+```{r}
+#model WITH covariates
+RQ3.mod2 <- multinom(Oral.health.status ~ Work.Schedule + Age + Race + Sex + Insurance + Citizenship,
+                     data=NHANES.complete)
+summary(RQ3.mod2)
+
+#hypothesis test
+#calculate z score
+RQ3.mod2.z <- summary(RQ3.mod2)$coefficients/summary(RQ3.mod2)$standard.errors
+# 2-tailed Z test
+RQ3.mod2.p <- (1 - pnorm(abs(RQ3.mod2.z), 0, 1))*2
+RQ3.mod2.p #give pvalues for each level
+
+# Get OR's
+round(exp(coef(RQ3.mod2)), digits = 2)
+
+# Get CI's
+round(exp(confint(RQ3.mod2, level=0.95)), digits = 2)
+```
+
+
+```{r}
+#RQ3
+#which model predicts better
+lrtest(RQ3.mod1, RQ3.mod2)
+
+#model with covariates predicts better
+#we will use model with covariates for interpretations
+```
+
+#### Results 
+
+```{r results='markup'}
+#Table with output of the model with covariates
+tab_model(RQ3.mod2, digits = 2, digits.p = 2)
+
+```
+
+*Test linearity assumption*
+
+```{r}
+#linearity of age
+
+#create term to test linearity
+age.linearity <- NHANES.complete$Age * log(NHANES.complete$Age)
+
+#Box Tidwell technique, test the assumption of linearity
+boxTidwellAge <- multinom(Oral.health.status ~ Age + age.linearity,
+                     data=NHANES.complete) 
+
+summary(boxTidwellAge)
+
+#hypothesis test
+#want non-significant interaction term to pass linearity assumption
+#calculate z score
+boxTidwellAge.z <- summary(boxTidwellAge)$coefficients/summary(boxTidwellAge)$standard.errors
+# 2-tailed Z test
+boxTidwellAge.p <- (1 - pnorm(abs(boxTidwellAge.z), 0, 1))*2
+boxTidwellAge.p #give pvalues for each level
+
+```
+
+- DOES NOT MEET linearity assumption for age
+
+*Check for Multicollinearity*
+
+```{r}
+#check for multicollinearity with vif
+vif(RQ1.mod2)
+vif(RQ2.mod2)
+vif(RQ3.mod2)
+
+```
+
+- Age might violate multicollinearity
+
+```{r}
+## Project response
+# Make a logistic model
+
+#make binary outcome
+NHANES.complete$Oral.health <- car:: recode(NHANES.complete$Oral.health.status,
+                              "'Poor'= 'Bad';
+                               'Moderate' = 'Bad'")
+summary(NHANES.complete$Oral.health)
+
+#set new reference 
+
+NHANES.complete$Oral.health <- relevel(NHANES.complete$Oral.health, 
+                                            ref = "Good")
+
+summary(NHANES.complete)
+
+```
+
+```{r}
+#run logistic regression
+logreg <- glm(Oral.health ~ as.factor(Work.Schedule) + Age + as.factor(Race) + as.factor(Sex) + as.factor(Insurance) + as.factor(Citizenship), data=NHANES.complete, family="binomial")
+summary(logreg)
+  
+#calculate and print ORs and 95% CIs  
+ORlogreg<-exp(cbind(OR = coef(logreg), confint(logreg))) #calculate ORs and 95% CIs
+  ORlogreg #print ORs and 95% CIs
+  
+tab_model(logreg)
+```
+
